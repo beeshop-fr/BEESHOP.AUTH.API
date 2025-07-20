@@ -1,0 +1,46 @@
+name: CI - Build and Test .NET
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build_and_test:
+    name: Build, Test, and Analyze
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore BEESHOP.AUTH.API.sln
+
+      - name: Build solution
+        run: dotnet build BEESHOP.AUTH.API.sln --no-restore --configuration Release
+
+      - name: Run tests
+        run: dotnet test BEESHOP.AUTH.API.sln --no-build --configuration Release --logger trx
+
+      # - name: SonarQube Begin Analysis
+      #   uses: SonarSource/sonarcloud-github-action@master
+      #   with:
+      #     projectBaseDir: .
+      #     args: >
+      #       -Dsonar.projectKey=ton_compte_ton_projet
+      #       -Dsonar.organization=ton_organisation
+      #       -Dsonar.host.url=https://sonarcloud.io
+      #       -Dsonar.token=${{ secrets.SONAR_TOKEN }}
+
+      # - name: Run Sonar Scanner
+      #   run: dotnet build BEESHOP.AUTH.API.sln
+
+      # - name: End SonarQube Analysis
+      #   run: dotnet sonarscanner end /d:sonar.token=${{ secrets.SONAR_TOKEN }}
