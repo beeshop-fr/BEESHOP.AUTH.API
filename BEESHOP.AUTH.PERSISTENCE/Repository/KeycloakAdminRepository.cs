@@ -1,5 +1,8 @@
 ﻿using BEESHOP.AUTH.APPLICATION.Dtos;
 using BEESHOP.AUTH.APPLICATION.Interfaces;
+using BEESHOP.AUTH.PERSISTENCE.Config;
+using Microsoft.Extensions.Options;
+using System.Net.Http.Headers;
 
 namespace BEESHOP.AUTH.PERSISTENCE.Repository;
 
@@ -7,19 +10,24 @@ public class KeycloakAdminRepository : IKeycloakAdminRepository
 {
 
     private readonly HttpClient _httpClient;
-    private readonly string _realm = "beeshop";
-    private readonly string _adminToken; // À récupérer dynamiquement en vrai
+    private readonly KeycloakConfig _settings;
 
-    public KeycloakAdminRepository(HttpClient httpClient)
+    private readonly string _realm = "beeshop";
+
+    public KeycloakAdminRepository(HttpClient httpClient, IOptions<KeycloakConfig> settings)
     {
         _httpClient = httpClient;
-        _adminToken = "TON_TOKEN_ADMIN"; // TODO: récupérer dynamiquement avec le compte admin
+        _settings = settings.Value;
+        _httpClient.BaseAddress = new Uri(_settings.Url);
     }
 
     public async Task CreateUserAsync(CreateUserDto dto)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, $"/admin/realms/{_realm}/users");
-        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _adminToken);
+        var token = await GetAdminTokenAsync();
+
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/admin/realms/{_realm}/users");        
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
 
         var userPayload = new
         {
@@ -42,8 +50,11 @@ public class KeycloakAdminRepository : IKeycloakAdminRepository
 
     public async Task DeleteUserAsync(string userId)
     {
+        var token = await GetAdminTokenAsync();
+
         var request = new HttpRequestMessage(HttpMethod.Delete, $"/admin/realms/{_realm}/users/{userId}");
-        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _adminToken);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
 
         var response = await _httpClient.SendAsync(request);
         response.EnsureSuccessStatusCode();
@@ -54,6 +65,7 @@ public class KeycloakAdminRepository : IKeycloakAdminRepository
         var parameters = new Dictionary<string, string>
         {
             {"client_id", "beeshop-auth-api"},
+            {"client_secret", _settings.ClientSecret},
             {"grant_type", "password"},
             {"username", dto.Username},
             {"password", dto.Password}
@@ -63,6 +75,13 @@ public class KeycloakAdminRepository : IKeycloakAdminRepository
             $"/realms/{_realm}/protocol/openid-connect/token",
             new FormUrlEncodedContent(parameters));
 
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            throw new Exception($"Failed login : {response.StatusCode} - {error}");
+        }
+
+
         response.EnsureSuccessStatusCode();
 
         var content = await response.Content.ReadAsStringAsync();
@@ -70,4 +89,38 @@ public class KeycloakAdminRepository : IKeycloakAdminRepository
 
         return json.RootElement.GetProperty("access_token").GetString()!;
     }
+
+    private async Task<string> GetAdminTokenAsync()
+    {
+        var parameters = new Dictionary<string, string>
+        {
+            {"client_id", _settings.ClientId},
+            {"grant_type", "password"},
+            {"username", _settings.AdminUsername},
+            {"password", _settings.AdminPassword}
+        };
+
+        var response = await _httpClient.PostAsync(
+            "/realms/master/protocol/openid-connect/token",
+            new FormUrlEncodedContent(parameters));
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            throw new Exception($"Failed to retrieve admin token: {response.StatusCode} - {error}");
+        }
+
+        response.EnsureSuccessStatusCode();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = System.Text.Json.JsonDocument.Parse(content);
+
+        var token = json.RootElement.GetProperty("access_token").GetString()!;
+
+
+        Console.WriteLine($"[DEBUG] Admin Token: {token}");
+
+        return json.RootElement.GetProperty("access_token").GetString()!;
+    }
+
 }

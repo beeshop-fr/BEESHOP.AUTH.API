@@ -17,7 +17,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
-    [Authorize(Roles = "admin")]
+    [AllowAnonymous]
     public async Task<IActionResult> Register([FromBody] CreateUserDto dto)
     {
         await _keycloakAdminRepository.CreateUserAsync(dto);
@@ -33,7 +33,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpDelete("delete/{userId}")]
-    [Authorize(Roles = "admin")]
+    [AllowAnonymous]
     public async Task<IActionResult> Delete(string userId)
     {
         await _keycloakAdminRepository.DeleteUserAsync(userId);
