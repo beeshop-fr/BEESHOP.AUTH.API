@@ -32,8 +32,22 @@ public class AuthController : ControllerBase
         return Ok(new { Token = token });
     }
 
+    [Authorize]
+    [HttpGet("userinfo")]
+    public async Task<IActionResult> GetUserInfo()
+    {
+        var authHeader = Request.Headers["Authorization"].ToString();
+        if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+            return Unauthorized("Missing or invalid Authorization header");
+
+        var token = authHeader["Bearer ".Length..];
+        var userInfo = await _keycloakAdminRepository.GetUserInfoAsync(token);
+
+        return Ok(userInfo);
+    }
+
     [HttpDelete("delete/{userId}")]
-    [AllowAnonymous]
+    [Authorize(Roles = "admin")]
     public async Task<IActionResult> Delete(string userId)
     {
         await _keycloakAdminRepository.DeleteUserAsync(userId);

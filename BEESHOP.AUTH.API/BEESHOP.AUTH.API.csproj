@@ -18,8 +18,4 @@
     <ProjectReference Include="..\BEESHOP.AUTH.PERSISTENCE\BEESHOP.AUTH.PERSISTENCE.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Config\" />
-  </ItemGroup>
-
 </Project>

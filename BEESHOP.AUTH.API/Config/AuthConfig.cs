@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 
 namespace BEESHOP.AUTH.API.Config;
 
@@ -14,8 +15,12 @@ public static class AuthConfig
         .AddJwtBearer(options =>
         {
             options.Authority = "http://localhost:8081/realms/beeshop";
-            options.Audience = "beeshop-auth-api";
             options.RequireHttpsMetadata = false;
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateAudience = true,
+                ValidAudience = "beeshop-auth"
+            };
         });
 
         return services;
