@@ -1,0 +1,9 @@
+services:
+  auth-api:
+    image: louis404/beeshop-auth-api:latest
+    container_name: beeshop-auth-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"

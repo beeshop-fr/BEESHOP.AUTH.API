@@ -1,69 +1,71 @@
-name: CD - Build, Analyze and Push Docker image
+name: CD - Auth (Docker Build/Push + Deploy)
 
 on:
   push:
-    branches:
-      - main
-      - release/**
+    branches: [ main, release/** ]
+    paths:
+      - "BEESHOP.AUTH.API/**"
+      - "BEESHOP.AUTH.API.sln"
+      - "Dockerfile"
+      - ".github/workflows/cd.yml"
+  workflow_dispatch: {}
+
+env:
+  IMAGE_NAME: louis404/beeshop-auth-api
 
 jobs:
-  build_analyze_push:
+  build_and_push:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 8.0.x
-
-      - name: Install dependencies
-        run: dotnet restore BEESHOP.AUTH.API.sln
-
-      # # Analyse SonarQube
-      # - name: SonarQube Begin Analysis
-      #   uses: sonarsource/sonarqube-scan-action@master
-      #   with:
-      #     projectBaseDir: .
-      #   env:
-      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      #     SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-
-      # - name: Build solution
-      #   run: dotnet build BEESHOP.AUTH.API.sln --configuration Release --no-restore
-
-      # - name: Test solution
-      #   run: dotnet test BEESHOP.AUTH.API.sln --no-build --verbosity normal
-
-      # - name: SonarQube End Analysis
-      #   uses: sonarsource/sonarqube-quality-gate-action@master
-      #   env:
-      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-      # Login Docker Hub
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Récupérer version du csproj
-      - name: Get version
-        id: version
+      - name: Get version (from csproj or fallback to SHA)
+        id: ver
+        shell: bash
         run: |
-          VERSION=$(grep -oPm1 "(?<=<Version>)[^<]+" BEESHOP.AUTH.API/BEESHOP.AUTH.API.csproj)
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          VERSION=$(grep -oPm1 "(?<=<Version>)[^<]+" BEESHOP.AUTH.API/BEESHOP.AUTH.API.csproj || true)
+          if [ -z "$VERSION" ]; then VERSION=$(echo "${GITHUB_SHA}" | cut -c1-7); fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION=$VERSION"
 
-      # Build Docker
+      - name: Enable BuildKit (faster builds)
+        run: |
+          echo "DOCKER_BUILDKIT=1" >> $GITHUB_ENV
+          echo "COMPOSE_DOCKER_CLI_BUILD=1" >> $GITHUB_ENV
+
       - name: Build Docker image
         run: |
-          docker build -t louis404/beeshop-auth-api:${{ steps.version.outputs.VERSION }} .
-          docker tag louis404/beeshop-auth-api:${{ steps.version.outputs.VERSION }} louis404/beeshop-auth-api:latest
+          docker build -t $IMAGE_NAME:${{ steps.ver.outputs.version }} -t $IMAGE_NAME:latest .
 
-      # Push Docker
       - name: Push Docker image
         run: |
-          docker push louis404/beeshop-auth-api:${{ steps.version.outputs.VERSION }}
-          docker push louis404/beeshop-auth-api:latest
+          docker push $IMAGE_NAME:${{ steps.ver.outputs.version }}
+          docker push $IMAGE_NAME:latest
+
+  deploy:
+    needs: build_and_push
+    if: github.ref_name == 'main'   # déploie auto seulement depuis main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+            cd /home/ubuntu/beeshop-auth
+            # Assure-toi que .env et docker-compose.yml existent déjà ici
+            docker compose pull auth-api
+            docker compose up -d auth-api
+            docker image prune -f
